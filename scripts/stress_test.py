@@ -101,10 +101,6 @@ async def test_double_booking(client: httpx.AsyncClient, tokens: list[str], room
     else:
         print(f"✗ FAIL: Expected 1 success, got {success_count}")
         return False
-        return True
-    else:
-        print(f"✗ FAIL: Expected 1 success, got {success_count}")
-        return False
 
 
 async def test_quota(client: httpx.AsyncClient, token: str, room_id: int):
