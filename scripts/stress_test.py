@@ -13,14 +13,17 @@ BASE_URL = "http://localhost:8000"
 
 async def setup_test_env(client: httpx.AsyncClient):
     """Create org, users, and room for testing."""
-    # Register admin
+    # Register admin (skip if already exists)
     resp = await client.post("/auth/register", json={
         "org_name": "StressOrg",
         "username": "admin1",
         "password": "pass123"
     })
-    resp.raise_for_status()
-    admin_data = resp.json()
+    if resp.status_code == 409:
+        print("Admin user already exists, continuing...")
+    else:
+        resp.raise_for_status()
+    admin_data = resp.json() if resp.status_code == 201 else None
     
     # Login admin
     resp = await client.post("/auth/login", json={
@@ -38,19 +41,23 @@ async def setup_test_env(client: httpx.AsyncClient):
     resp.raise_for_status()
     room_id = resp.json()["id"]
     
-    # Register members
+    # Register members (skip if already exist)
     members = []
     for i in range(5):
-        await client.post("/auth/register", json={
+        reg_resp = await client.post("/auth/register", json={
             "org_name": "StressOrg",
             "username": f"member{i}",
             "password": "pass123"
         })
+        if reg_resp.status_code == 409:
+            print(f"Member{i} already exists, logging in...")
+        
         resp = await client.post("/auth/login", json={
             "org_name": "StressOrg",
             "username": f"member{i}",
             "password": "pass123"
         })
+        resp.raise_for_status()
         members.append(resp.json()["access_token"])
     
     return admin_token, members, room_id
