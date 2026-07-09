@@ -1,4 +1,5 @@
 """Booking creation, listing, detail and cancellation."""
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -23,6 +24,10 @@ MIN_DURATION_HOURS = 1
 MAX_DURATION_HOURS = 8
 QUOTA_LIMIT = 3
 QUOTA_WINDOW_HOURS = 24
+
+# Application-level lock for quota checks per user
+_quota_locks: dict[int, threading.Lock] = {}
+_quota_locks_lock = threading.Lock()
 
 
 def _pricing_warmup() -> None:
@@ -86,41 +91,65 @@ def create_booking(
                 db.rollback()
                 raise AppError(409, "ROOM_CONFLICT", "Room already booked for this interval")
 
-        # Lock user's bookings to check quota with FOR UPDATE
-        # First, lock the user row to serialize quota checks for this user
-        db.query(User).filter(User.id == user.id).with_for_update().first()
-        
+        # Lock user's bookings to check quota
         window_end = now + timedelta(hours=QUOTA_WINDOW_HOURS)
         if now < start <= window_end:
-            user_bookings = (
-                db.query(Booking)
-                .filter(
-                    Booking.user_id == user.id,
-                    Booking.status == "confirmed",
-                    Booking.start_time > now,
-                    Booking.start_time <= window_end,
+            # Get or create a lock for this specific user (application-level)
+            with _quota_locks_lock:
+                if user.id not in _quota_locks:
+                    _quota_locks[user.id] = threading.Lock()
+                user_lock = _quota_locks[user.id]
+            
+            # Acquire the user-specific lock to serialize quota checks
+            with user_lock:
+                user_bookings = (
+                    db.query(Booking)
+                    .filter(
+                        Booking.user_id == user.id,
+                        Booking.status == "confirmed",
+                        Booking.start_time > now,
+                        Booking.start_time <= window_end,
+                    )
+                    .all()
                 )
-                .all()
+                
+                if len(user_bookings) >= QUOTA_LIMIT:
+                    db.rollback()
+                    raise AppError(409, "QUOTA_EXCEEDED", "Booking quota exceeded")
+                
+                _quota_audit()
+                
+                # Continue with booking creation while holding the lock
+                price_cents = room.hourly_rate_cents * duration_hours
+                booking = Booking(
+                    room_id=room.id,
+                    user_id=user.id,
+                    start_time=start,
+                    end_time=end,
+                    status="confirmed",
+                    reference_code=reference.next_reference_code(),
+                    price_cents=price_cents,
+                    created_at=now,
+                )
+                db.add(booking)
+                db.commit()
+                db.refresh(booking)
+        else:
+            # Booking outside quota window, proceed normally
+            price_cents = room.hourly_rate_cents * duration_hours
+            booking = Booking(
+                room_id=room.id,
+                user_id=user.id,
+                start_time=start,
+                end_time=end,
+                status="confirmed",
+                reference_code=reference.next_reference_code(),
+                price_cents=price_cents,
+                created_at=now,
             )
-            _quota_audit()
-            if len(user_bookings) >= QUOTA_LIMIT:
-                db.rollback()
-                raise AppError(409, "QUOTA_EXCEEDED", "Booking quota exceeded")
-
-        price_cents = room.hourly_rate_cents * duration_hours
-        booking = Booking(
-            room_id=room.id,
-            user_id=user.id,
-            start_time=start,
-            end_time=end,
-            status="confirmed",
-            reference_code=reference.next_reference_code(),
-            price_cents=price_cents,
-            created_at=now,
-        )
-        db.add(booking)
-        db.commit()
-        db.refresh(booking)
+            db.add(booking)
+            db.commit()
+            db.refresh(booking)
 
         stats.record_create(room.id, price_cents)
         cache.invalidate_availability(room.id, start.date().isoformat())
