@@ -54,7 +54,7 @@ def generate_export(
         rows = _fetch_scoped(db, org_id, user_id, room_id)
 
     buffer = io.StringIO()
-    writer = csv.writer(buffer)
+    writer = csv.writer(buffer, lineterminator='\n')
     writer.writerow(EXPORT_HEADER)
     for b in rows:
         writer.writerow(

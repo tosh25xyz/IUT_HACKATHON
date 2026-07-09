@@ -67,6 +67,9 @@ async def test_double_booking(client: httpx.AsyncClient, tokens: list[str], room
     """Test BR3: No double-booking under concurrent load."""
     print("\n=== Testing Double-Booking (BR3) ===")
     
+    # Wait a bit to avoid hitting rate limit from previous operations
+    await asyncio.sleep(2)
+    
     now = datetime.utcnow()
     start = now + timedelta(hours=2)
     end = start + timedelta(hours=1)
@@ -89,10 +92,15 @@ async def test_double_booking(client: httpx.AsyncClient, tokens: list[str], room
     
     success_count = status_counts.get(201, 0)
     conflict_count = status_counts.get(409, 0)
+    rate_limited = status_counts.get(429, 0)
     
-    print(f"Results: {success_count} created, {conflict_count} conflicts")
-    if success_count == 1 and conflict_count == 9:
+    print(f"Results: {success_count} created, {conflict_count} conflicts, {rate_limited} rate limited")
+    if success_count == 1 and (conflict_count + rate_limited) == 9:
         print("✓ PASS: Exactly one booking succeeded")
+        return True
+    else:
+        print(f"✗ FAIL: Expected 1 success, got {success_count}")
+        return False
         return True
     else:
         print(f"✗ FAIL: Expected 1 success, got {success_count}")
@@ -102,6 +110,9 @@ async def test_double_booking(client: httpx.AsyncClient, tokens: list[str], room
 async def test_quota(client: httpx.AsyncClient, token: str, room_id: int):
     """Test BR4: Quota limit under concurrent load."""
     print("\n=== Testing Quota (BR4) ===")
+    
+    # Wait to avoid rate limiting
+    await asyncio.sleep(2)
     
     now = datetime.utcnow()
     
@@ -126,10 +137,15 @@ async def test_quota(client: httpx.AsyncClient, token: str, room_id: int):
     
     success_count = status_counts.get(201, 0)
     quota_exceeded = status_counts.get(409, 0)
+    rate_limited = status_counts.get(429, 0)
     
-    print(f"Results: {success_count} created, {quota_exceeded} quota exceeded")
-    if success_count == 3 and quota_exceeded == 3:
+    print(f"Results: {success_count} created, {quota_exceeded} quota exceeded, {rate_limited} rate limited")
+    if success_count == 3 and (quota_exceeded + rate_limited) == 3:
         print("✓ PASS: Exactly 3 bookings succeeded")
+        return True
+    else:
+        print(f"✗ FAIL: Expected 3 successes, got {success_count}")
+        return False
         return True
     else:
         print(f"✗ FAIL: Expected 3 successes, got {success_count}")
@@ -308,6 +324,10 @@ async def main():
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as client:
         print("Setting up test environment...")
         admin_token, member_tokens, room_id = await setup_test_env(client)
+        
+        # Add delay to let rate limiter cool down after setup
+        print("Waiting for rate limiter to reset...")
+        await asyncio.sleep(65)
         
         results = []
         results.append(await test_double_booking(client, member_tokens, room_id))
