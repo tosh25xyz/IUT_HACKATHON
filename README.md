@@ -1,5 +1,11 @@
 # CoWork — Coworking Space Booking API
 
+> **🐛 Bug Fix Submission — ICT Fest 2024 Preliminary Round**
+> 
+> This repository contains fixes for 24 bugs seeded into the CoWork API.
+> All bugs have been systematically identified, fixed with minimal changes, and verified
+> with comprehensive concurrency stress tests. See `bug_report.md` for complete details.
+
 CoWork is a REST API for managing bookable rooms inside a coworking space across
 multiple tenant organizations. Each organization has its own rooms, staff
 (admins), and members. Members book rooms for time slots; admins manage rooms and
@@ -160,3 +166,79 @@ Framework validation errors (422) use FastAPI's default shape.
 codes, JSON field names, JWT claims). Grading is **black-box**: the grader builds
 the container and asserts behavior against the business rules and API contract
 above by talking to the API only.
+
+---
+
+## 🐛 Bug Fix Documentation
+
+### Quick Links
+- **[bug_report.md](bug_report.md)** - Complete catalog of all 24 bugs with line numbers and fixes
+- **[SUBMISSION_SUMMARY.md](SUBMISSION_SUMMARY.md)** - High-level overview of changes
+- **[FIXES_CHECKLIST.md](FIXES_CHECKLIST.md)** - Quick verification checklist
+- **[QUICKSTART.md](QUICKSTART.md)** - Installation and testing guide
+- **[scripts/README.md](scripts/README.md)** - Test script documentation
+
+### What Was Fixed
+
+**24 bugs across 9 files:**
+- 4 datetime & validation bugs
+- 3 business logic bugs
+- 3 authentication bugs
+- 3 API security & visibility bugs
+- 3 pagination bugs
+- 2 cache invalidation bugs
+- 6 concurrency bugs (database + threading)
+
+**Key improvements:**
+- ✅ Timezone offsets properly converted to UTC
+- ✅ All booking validations enforced (strict future, duration range, end > start)
+- ✅ Back-to-back bookings allowed (strict overlap check)
+- ✅ Refund policy correct (0% <24h, 50% 24-48h, 100% ≥48h) with half-up rounding
+- ✅ Token expiry 900 seconds, JTI-based revocation, single-use refresh tokens
+- ✅ Member visibility restricted to own bookings
+- ✅ Pagination: ascending order, correct offset, respects limit
+- ✅ Database-level locking prevents double-booking, quota violations, cancel races
+- ✅ Thread-safe counters for rate limiting, reference codes, and statistics
+
+### Verification
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+pip install httpx
+
+# Start server (terminal 1)
+uvicorn app.main:app
+
+# Run contract verification (terminal 2)
+python scripts/contract_check.py
+
+# Run concurrency stress tests (repeat 3-5 times)
+rm -f cowork.db && python scripts/stress_test.py
+```
+
+**Expected results:**
+- Contract check: All ✓ marks (endpoints maintain exact API contract)
+- Stress tests: 6/6 pass (all concurrency rules hold under load)
+
+### Files Modified
+
+**Core application (8 files):**
+- `app/auth.py`, `app/timeutils.py`, `app/models.py`
+- `app/routers/auth.py`, `app/routers/bookings.py`
+- `app/services/ratelimit.py`, `app/services/reference.py`, `app/services/stats.py`, `app/services/refunds.py`
+
+**New documentation & tests:**
+- Bug report and checklists
+- Concurrency stress tests (`scripts/stress_test.py`)
+- API contract verification (`scripts/contract_check.py`)
+
+### No Contract Changes
+
+✅ All endpoint paths unchanged  
+✅ All HTTP status codes unchanged  
+✅ All error code strings unchanged  
+✅ All JSON field names unchanged  
+✅ CSV export header unchanged  
+
+Every fix targets only the bug itself with minimal diffs.
