@@ -86,7 +86,7 @@ def create_booking(
                 db.rollback()
                 raise AppError(409, "ROOM_CONFLICT", "Room already booked for this interval")
 
-        # Lock user's bookings to check quota
+        # Lock user's bookings to check quota with FOR UPDATE
         window_end = now + timedelta(hours=QUOTA_WINDOW_HOURS)
         if now < start <= window_end:
             user_bookings = (
@@ -97,6 +97,7 @@ def create_booking(
                     Booking.start_time > now,
                     Booking.start_time <= window_end,
                 )
+                .with_for_update()
                 .all()
             )
             _quota_audit()
@@ -196,11 +197,12 @@ def cancel_booking(
         # Start immediate transaction for write lock
         db.execute(text("BEGIN IMMEDIATE"))
         
-        # Lock booking to prevent concurrent cancellations
+        # Lock booking to prevent concurrent cancellations with FOR UPDATE
         booking = (
             db.query(Booking)
             .join(Room, Booking.room_id == Room.id)
             .filter(Booking.id == booking_id, Room.org_id == user.org_id)
+            .with_for_update()
             .first()
         )
         if booking is None:
