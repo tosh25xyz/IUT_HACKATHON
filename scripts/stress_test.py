@@ -142,10 +142,6 @@ async def test_quota(client: httpx.AsyncClient, token: str, room_id: int):
     else:
         print(f"✗ FAIL: Expected 3 successes, got {success_count}")
         return False
-        return True
-    else:
-        print(f"✗ FAIL: Expected 3 successes, got {success_count}")
-        return False
 
 
 async def test_rate_limit(client: httpx.AsyncClient, token: str, room_id: int):
