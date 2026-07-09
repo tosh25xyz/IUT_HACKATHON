@@ -87,6 +87,9 @@ def create_booking(
                 raise AppError(409, "ROOM_CONFLICT", "Room already booked for this interval")
 
         # Lock user's bookings to check quota with FOR UPDATE
+        # First, lock the user row to serialize quota checks for this user
+        db.query(User).filter(User.id == user.id).with_for_update().first()
+        
         window_end = now + timedelta(hours=QUOTA_WINDOW_HOURS)
         if now < start <= window_end:
             user_bookings = (
@@ -97,7 +100,6 @@ def create_booking(
                     Booking.start_time > now,
                     Booking.start_time <= window_end,
                 )
-                .with_for_update()
                 .all()
             )
             _quota_audit()
